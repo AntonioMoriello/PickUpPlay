@@ -6,7 +6,9 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
+    @StateObject private var gameViewModel = GameViewModel()
     @State private var animateCards = false
+    @State private var showAllGames = false
 
     var body: some View {
         NavigationStack {
@@ -52,35 +54,58 @@ struct HomeView: View {
                         .opacity(animateCards ? 1 : 0)
                         .offset(y: animateCards ? 0 : 20)
 
-                        VStack(spacing: 16) {
-                            SectionHeader(title: "Nearby Games", icon: "mappin.and.ellipse")
+                        HStack(spacing: 12) {
+                            QuickActionButton(icon: "plus.circle.fill", title: "Create", color: AppTheme.accentGreen) {}
+                            QuickActionButton(icon: "map.fill", title: "Map", color: AppTheme.accentCyan) {}
+                            QuickActionButton(icon: "magnifyingglass", title: "Browse", color: AppTheme.accentAmber) {
+                                showAllGames = true
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .opacity(animateCards ? 1 : 0)
+                        .offset(y: animateCards ? 0 : 20)
 
-                            VStack(spacing: 16) {
-                                ZStack {
-                                    Circle()
-                                        .fill(AppTheme.accentGreen.opacity(0.08))
-                                        .frame(width: 80, height: 80)
-
-                                    Image(systemName: "map.fill")
-                                        .font(.system(size: 32, weight: .medium))
-                                        .foregroundStyle(AppTheme.gradient)
-                                }
-
-                                Text("Game discovery coming soon")
-                                    .font(.headline)
-                                    .fontDesign(.rounded)
-
-                                Text("You'll see nearby games here with a map view, filters, and quick join.")
+                        VStack(spacing: 12) {
+                            HStack {
+                                SectionHeader(title: "Nearby Games", icon: "mappin.and.ellipse")
+                                Spacer()
+                                Button("See All") { showAllGames = true }
                                     .font(.subheadline)
                                     .fontDesign(.rounded)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 24)
+                                    .foregroundStyle(AppTheme.gradient)
+                                    .padding(.trailing, 20)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 32)
-                            .glassCard(padding: 0)
-                            .padding(.horizontal, 16)
+
+                            if gameViewModel.isLoading {
+                                ProgressView()
+                                    .frame(height: 120)
+                            } else if gameViewModel.games.isEmpty {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "sportscourt")
+                                        .font(.system(size: 32))
+                                        .foregroundStyle(AppTheme.gradient)
+                                    Text("No nearby games yet")
+                                        .font(.subheadline)
+                                        .fontDesign(.rounded)
+                                        .foregroundColor(.secondary)
+                                    Text("Create one or check back later!")
+                                        .font(.caption)
+                                        .fontDesign(.rounded)
+                                        .foregroundColor(.secondary)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 24)
+                                .glassCard(padding: 0)
+                                .padding(.horizontal, 16)
+                            } else {
+                                ForEach(gameViewModel.games.prefix(3)) { game in
+                                    NavigationLink(destination: GameDetailsView(game: game)) {
+                                        GameCardView(game: game)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 16)
+                                }
+                            }
                         }
                         .opacity(animateCards ? 1 : 0)
                         .offset(y: animateCards ? 0 : 20)
@@ -91,11 +116,44 @@ struct HomeView: View {
             }
             .navigationTitle("Home")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(isPresented: $showAllGames) {
+                GameListView()
+            }
             .onAppear {
                 withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1)) {
                     animateCards = true
                 }
+                Task {
+                    await gameViewModel.fetchNearbyGames()
+                }
             }
+            .errorBanner(message: $gameViewModel.errorMessage)
+            .loading(isLoading: false)
+        }
+    }
+}
+
+struct QuickActionButton: View {
+    let icon: String
+    let title: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(color)
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .fontDesign(.rounded)
+                    .foregroundColor(.primary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 16)
+            .glassCard(padding: 0)
         }
     }
 }
@@ -112,15 +170,12 @@ struct QuickStatCard: View {
                 Circle()
                     .fill(color.opacity(0.12))
                     .frame(width: 42, height: 42)
-
                 Image(systemName: icon)
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(color)
             }
-
             Text(value)
                 .font(.system(size: 24, weight: .bold, design: .rounded))
-
             Text(title)
                 .font(.caption)
                 .fontWeight(.medium)
@@ -150,9 +205,4 @@ struct SectionHeader: View {
         }
         .padding(.horizontal, 20)
     }
-}
-
-#Preview {
-    HomeView()
-        .environmentObject(AuthViewModel())
 }

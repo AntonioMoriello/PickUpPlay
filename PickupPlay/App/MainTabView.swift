@@ -26,6 +26,8 @@ struct MainTabView: View {
         }
     }
 
+    @State private var showCreateGame = false
+
     var body: some View {
         TabView(selection: $selectedTab) {
             HomeView()
@@ -34,13 +36,13 @@ struct MainTabView: View {
                 }
                 .tag(Tab.home)
 
-            MapViewStub()
+            GameMapView()
                 .tabItem {
                     Label(Tab.map.rawValue, systemImage: Tab.map.iconName)
                 }
                 .tag(Tab.map)
 
-            CreateGamePlaceholder()
+            Color.clear
                 .tabItem {
                     Label(Tab.create.rawValue, systemImage: Tab.create.iconName)
                 }
@@ -52,45 +54,171 @@ struct MainTabView: View {
                 }
                 .tag(Tab.messages)
 
-            ProfilePlaceholder()
+            ProfileTab()
                 .tabItem {
                     Label(Tab.profile.rawValue, systemImage: Tab.profile.iconName)
                 }
                 .tag(Tab.profile)
         }
         .tint(AppTheme.accentGreen)
+        .onChange(of: selectedTab) { _, newValue in
+            if newValue == .create {
+                showCreateGame = true
+                selectedTab = .home
+            }
+        }
+        .fullScreenCover(isPresented: $showCreateGame) {
+            CreateGameView()
+                .environmentObject(authViewModel)
+        }
     }
 }
 
-struct CreateGamePlaceholder: View {
+struct ProfileTab: View {
+    @EnvironmentObject var authViewModel: AuthViewModel
+    @State private var showSportBrowser = false
+    @State private var showSavedVenues = false
+    @State private var showVenueMap = false
+
     var body: some View {
         NavigationStack {
             ZStack {
                 AnimatedMeshBackground()
 
-                VStack(spacing: 20) {
-                    ZStack {
-                        Circle()
-                            .fill(AppTheme.accentGreen.opacity(0.12))
-                            .frame(width: 100, height: 100)
+                ScrollView {
+                    VStack(spacing: 24) {
+                        ZStack {
+                            Circle()
+                                .fill(AppTheme.gradient)
+                                .frame(width: 100, height: 100)
+                                .shadow(color: AppTheme.accentGreen.opacity(0.3), radius: 16, y: 8)
 
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 44, weight: .medium))
-                            .foregroundStyle(AppTheme.gradient)
+                            Text(String((authViewModel.currentUser?.displayName ?? "P").prefix(1)).uppercased())
+                                .font(.system(size: 40, weight: .bold, design: .rounded))
+                                .foregroundColor(.white)
+                        }
+                        .padding(.top, 16)
+
+                        VStack(spacing: 6) {
+                            Text(authViewModel.currentUser?.displayName ?? "Profile")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                                .fontDesign(.rounded)
+                            Text(authViewModel.currentUser?.email ?? "")
+                                .font(.subheadline)
+                                .fontDesign(.rounded)
+                                .foregroundColor(.secondary)
+                        }
+
+                        HStack(spacing: 12) {
+                            QuickStatCard(
+                                title: "Games",
+                                value: "\(authViewModel.currentUser?.gamesPlayed ?? 0)",
+                                icon: "gamecontroller.fill",
+                                color: AppTheme.accentCyan
+                            )
+                            QuickStatCard(
+                                title: "Organized",
+                                value: "\(authViewModel.currentUser?.gamesOrganized ?? 0)",
+                                icon: "star.fill",
+                                color: AppTheme.accentAmber
+                            )
+                            QuickStatCard(
+                                title: "Rating",
+                                value: String(format: "%.1f", authViewModel.currentUser?.reliabilityScore ?? 5.0),
+                                icon: "heart.fill",
+                                color: AppTheme.accentGreen
+                            )
+                        }
+                        .padding(.horizontal, 16)
+
+                        VStack(spacing: 0) {
+                            ProfileMenuRow(icon: "sportscourt.fill", title: "Browse Sports", color: AppTheme.accentGreen) {
+                                showSportBrowser = true
+                            }
+                            Divider().padding(.leading, 56)
+                            ProfileMenuRow(icon: "map.fill", title: "Venue Map", color: AppTheme.accentCyan) {
+                                showVenueMap = true
+                            }
+                            Divider().padding(.leading, 56)
+                            ProfileMenuRow(icon: "heart.fill", title: "Saved Venues", color: AppTheme.accentRose) {
+                                showSavedVenues = true
+                            }
+                        }
+                        .glassCard(padding: 0)
+                        .padding(.horizontal, 16)
+
+                        Button(role: .destructive) {
+                            authViewModel.signOut()
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "rectangle.portrait.and.arrow.right")
+                                Text("Sign Out")
+                            }
+                            .font(.headline)
+                            .fontDesign(.rounded)
+                            .foregroundColor(AppTheme.accentRose)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(
+                                RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous)
+                                    .fill(AppTheme.accentRose.opacity(0.1))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous)
+                                    .strokeBorder(AppTheme.accentRose.opacity(0.3), lineWidth: 1)
+                            )
+                        }
+                        .padding(.horizontal, 32)
+                        .padding(.top, 8)
+
+                        Spacer(minLength: 40)
                     }
-
-                    Text("Create Game")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .fontDesign(.rounded)
-
-                    Text("Coming soon")
-                        .font(.subheadline)
-                        .fontDesign(.rounded)
-                        .foregroundColor(.secondary)
                 }
             }
-            .navigationTitle("Create Game")
+            .navigationTitle("Profile")
+            .navigationDestination(isPresented: $showSportBrowser) {
+                SportBrowserView()
+            }
+            .navigationDestination(isPresented: $showSavedVenues) {
+                SavedVenuesView()
+            }
+            .navigationDestination(isPresented: $showVenueMap) {
+                VenueMapView()
+            }
+        }
+    }
+}
+
+struct ProfileMenuRow: View {
+    let icon: String
+    let title: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(color.opacity(0.12))
+                        .frame(width: 32, height: 32)
+                    Image(systemName: icon)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(color)
+                }
+                Text(title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .fontDesign(.rounded)
+                    .foregroundColor(.primary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
     }
 }
@@ -106,7 +234,6 @@ struct MessagesPlaceholder: View {
                         Circle()
                             .fill(AppTheme.accentCyan.opacity(0.12))
                             .frame(width: 100, height: 100)
-
                         Image(systemName: "message.fill")
                             .font(.system(size: 44, weight: .medium))
                             .foregroundStyle(AppTheme.gradient)
@@ -117,87 +244,14 @@ struct MessagesPlaceholder: View {
                         .fontWeight(.bold)
                         .fontDesign(.rounded)
 
-                    Text("Coming soon")
+                    Text("Chat with your teammates.\nComing in the next update!")
                         .font(.subheadline)
                         .fontDesign(.rounded)
                         .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
                 }
             }
             .navigationTitle("Messages")
-        }
-    }
-}
-
-struct ProfilePlaceholder: View {
-    @EnvironmentObject var authViewModel: AuthViewModel
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                AnimatedMeshBackground()
-
-                VStack(spacing: 24) {
-                    Spacer()
-
-                    ZStack {
-                        Circle()
-                            .fill(AppTheme.gradient)
-                            .frame(width: 100, height: 100)
-                            .shadow(color: AppTheme.accentGreen.opacity(0.3), radius: 16, y: 8)
-
-                        Text(String((authViewModel.currentUser?.displayName ?? "P").prefix(1)).uppercased())
-                            .font(.system(size: 40, weight: .bold, design: .rounded))
-                            .foregroundColor(.white)
-                    }
-
-                    VStack(spacing: 6) {
-                        Text(authViewModel.currentUser?.displayName ?? "Profile")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .fontDesign(.rounded)
-
-                        Text(authViewModel.currentUser?.email ?? "")
-                            .font(.subheadline)
-                            .fontDesign(.rounded)
-                            .foregroundColor(.secondary)
-                    }
-
-                    Text("Full profile coming soon")
-                        .font(.caption)
-                        .fontDesign(.rounded)
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background(Capsule().fill(Color(.systemGray6)))
-
-                    Spacer()
-
-                    Button(role: .destructive) {
-                        authViewModel.signOut()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "rectangle.portrait.and.arrow.right")
-                            Text("Sign Out")
-                        }
-                        .font(.headline)
-                        .fontDesign(.rounded)
-                        .foregroundColor(AppTheme.accentRose)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 52)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous)
-                                .fill(AppTheme.accentRose.opacity(0.1))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: AppTheme.buttonRadius, style: .continuous)
-                                .strokeBorder(AppTheme.accentRose.opacity(0.3), lineWidth: 1)
-                        )
-                    }
-                    .padding(.horizontal, 32)
-                    .padding(.bottom, 40)
-                }
-            }
-            .navigationTitle("Profile")
         }
     }
 }

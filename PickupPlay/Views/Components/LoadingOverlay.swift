@@ -76,6 +76,10 @@ extension View {
     func loading(_ isLoading: Bool, message: String = "Loading...") -> some View {
         modifier(LoadingModifier(isLoading: isLoading, message: message))
     }
+
+    func loading(isLoading: Bool, message: String = "Loading...") -> some View {
+        modifier(LoadingModifier(isLoading: isLoading, message: message))
+    }
 }
 
 #Preview {

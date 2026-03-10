@@ -71,6 +71,12 @@ extension View {
     func errorBanner(_ message: String?, onDismiss: (() -> Void)? = nil) -> some View {
         modifier(ErrorBannerModifier(errorMessage: message, onDismiss: onDismiss))
     }
+
+    func errorBanner(message: Binding<String?>) -> some View {
+        modifier(ErrorBannerModifier(errorMessage: message.wrappedValue, onDismiss: {
+            message.wrappedValue = nil
+        }))
+    }
 }
 
 #Preview {

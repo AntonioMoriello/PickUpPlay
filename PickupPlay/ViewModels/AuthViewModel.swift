@@ -18,6 +18,7 @@ class AuthViewModel: ObservableObject {
     private let userRepository: UserRepository
     private let sportRepository: SportRepository
     private var authStateHandle: AuthStateDidChangeListenerHandle?
+    private var isPerformingAuthAction = false
 
     init() {
         self.authService = AuthService()
@@ -30,6 +31,7 @@ class AuthViewModel: ObservableObject {
         authStateHandle = authService.observeAuthState { [weak self] firebaseUser in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
+                guard !self.isPerformingAuthAction else { return }
                 if let firebaseUser = firebaseUser {
                     self.isAuthenticated = true
                     await self.loadUser(id: firebaseUser.uid)
@@ -44,18 +46,25 @@ class AuthViewModel: ObservableObject {
     func signUp(email: String, password: String, displayName: String) async {
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        isPerformingAuthAction = true
+        defer {
+            isLoading = false
+            isPerformingAuthAction = false
+        }
 
         do {
             let result = try await authService.signUp(email: email, password: password)
             let newUser = User.newUser(id: result.user.uid, email: email, displayName: displayName)
             try await userRepository.createUser(newUser)
 
-            try await sportRepository.populateSportsIfNeeded()
-
             self.currentUser = newUser
             self.isAuthenticated = true
             self.needsOnboarding = true
+
+            do {
+                try await sportRepository.populateSportsIfNeeded()
+            } catch {
+            }
         } catch {
             self.errorMessage = mapAuthError(error)
         }

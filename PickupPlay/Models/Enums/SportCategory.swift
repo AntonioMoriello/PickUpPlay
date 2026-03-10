@@ -2,7 +2,6 @@
 //  SportCategory.swift
 //  PickupPlay
 //
-
 import Foundation
 
 enum SportCategory: String, Codable, CaseIterable, Identifiable {

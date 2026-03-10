@@ -18,6 +18,7 @@ class SportRepository {
 
     func getSport(id: String) async throws -> Sport? {
         let document = try await db.collection(collection).document(id).getDocument()
+        guard document.exists else { return nil }
         return try document.data(as: Sport.self)
     }
 
