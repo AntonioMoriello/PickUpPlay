@@ -1,7 +1,3 @@
-//
-//  GameCardView.swift
-//  PickupPlay
-//
 import SwiftUI
 import FirebaseFirestore
 

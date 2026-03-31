@@ -1,7 +1,3 @@
-//
-//  SkillLevelSetupView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct SkillLevelSetupView: View {

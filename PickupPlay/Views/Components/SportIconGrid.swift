@@ -1,7 +1,3 @@
-//
-//  SportIconGrid.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct SportIconGrid: View {

@@ -1,10 +1,7 @@
-//
-//  GameViewModel.swift
-//  PickupPlay
-//
 import Foundation
 import Combine
 import CoreLocation
+import FirebaseAuth
 import FirebaseFirestore
 import SwiftUI
 
@@ -29,6 +26,9 @@ class GameViewModel: ObservableObject {
     private let gameHistoryRepo: GameHistoryRepo
     private let cacheRepository: CacheRepository
     private let venueRepository: VenueRepository
+    private let userRepository: UserRepository
+    private let achievementRepo: AchievementRepo
+    private let userPrefsRepo: UserPrefsRepo
 
     init() {
         self.gameRepository = GameRepository()
@@ -38,6 +38,9 @@ class GameViewModel: ObservableObject {
         self.locationService = LocationService()
         self.gameHistoryRepo = GameHistoryRepo()
         self.cacheRepository = CacheRepository()
+        self.userRepository = UserRepository()
+        self.achievementRepo = AchievementRepo()
+        self.userPrefsRepo = UserPrefsRepo()
     }
 
     func fetchNearbyGames(location: CLLocation? = nil, radius: Double = 25.0) async {
@@ -46,17 +49,14 @@ class GameViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            var loc = location
-            if loc == nil {
-                loc = await locationService.getCurrentLocation()
-            }
-            let games = try await gameRepository.getNearbyGames(
-                latitude: loc?.coordinate.latitude ?? 43.6532,
-                longitude: loc?.coordinate.longitude ?? -79.3832,
-                radiusKm: radius
+            let searchLocation = await resolveSearchLocation(requested: location)
+            let nearbyGames = try await fetchDemoAwareGames(
+                around: searchLocation,
+                requestedLocation: location,
+                radius: radius
             )
-            self.games = games
-            cacheRepository.cacheGames(games)
+            self.games = nearbyGames
+            cacheRepository.cacheGames(nearbyGames)
         } catch {
             self.errorMessage = "Failed to fetch games: \(error.localizedDescription)"
             self.games = cacheRepository.getCachedGames()
@@ -70,11 +70,14 @@ class GameViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            var filtered: [Game]
+            let searchLocation = await resolveSearchLocation()
+            var filtered = try await fetchDemoAwareGames(
+                around: searchLocation,
+                radius: filters.maxDistance
+            )
+
             if let sportId = filters.sportId, !sportId.isEmpty {
-                filtered = try await gameRepository.getGamesForSport(sportId: sportId)
-            } else {
-                filtered = try await gameRepository.getNearbyGames(latitude: 43.6532, longitude: -79.3832, radiusKm: filters.maxDistance)
+                filtered = filtered.filter { $0.sportId == sportId }
             }
 
             if let level = filters.skillLevel {
@@ -96,6 +99,7 @@ class GameViewModel: ObservableObject {
             }
 
             self.games = filtered
+            cacheRepository.cacheGames(filtered)
         } catch {
             self.errorMessage = "Failed to apply filters: \(error.localizedDescription)"
         }
@@ -111,9 +115,8 @@ class GameViewModel: ObservableObject {
 
         do {
             try await venueRepository.populateVenuesIfNeeded()
-            let location = await locationService.getCurrentLocation()
-            let loc = location ?? CLLocation(latitude: 43.6532, longitude: -79.3832)
-            nearbyVenues = try await venueService.fetchNearbyVenues(location: loc, radius: 25.0, sportFilter: nil)
+            let searchLocation = await resolveSearchLocation()
+            nearbyVenues = try await fetchDemoAwareVenues(around: searchLocation)
         } catch {
             self.errorMessage = "Failed to load venues: \(error.localizedDescription)"
         }
@@ -142,7 +145,7 @@ class GameViewModel: ObservableObject {
         if let venue = selectedVenue {
             location = venue.coordinates
         } else {
-            location = GeoPoint(latitude: 43.6532, longitude: -79.3832)
+            location = AppLocationDefaults.defaultGeoPoint
         }
 
         let game = gameService.buildGameObject(from: formData, userId: userId, location: location)
@@ -155,9 +158,17 @@ class GameViewModel: ObservableObject {
 
         do {
             let gameId = try await gameService.createGame(game)
-            let history = GameHistory.fromGame(game, userId: userId)
-            gameHistoryRepo.saveToHistory(history)
-            await fetchNearbyGames()
+            do {
+                try await userRepository.incrementGameCounts(userId: userId, gamesOrganizedDelta: 1)
+            } catch {
+                print("Failed to sync organizer stats: \(error)")
+            }
+            await refreshAchievementProgress(userId: userId)
+            if let createdGame = try await gameRepository.getGame(id: gameId) {
+                applyLocalGameUpdate(createdGame)
+            }
+            AppEvents.post(.gamesDidChange)
+            AppEvents.post(.profileDidChange)
             return gameId
         } catch {
             self.errorMessage = "Failed to create game: \(error.localizedDescription)"
@@ -172,13 +183,9 @@ class GameViewModel: ObservableObject {
 
         do {
             let updatedGame = try await gameService.joinGame(gameId: gameId, userId: userId)
-            let history = GameHistory.fromGame(updatedGame, userId: userId)
-            gameHistoryRepo.saveToHistory(history)
-
-            if let index = games.firstIndex(where: { $0.id == gameId }) {
-                games[index] = updatedGame
-            }
-            selectedGame = updatedGame
+            applyLocalGameUpdate(updatedGame)
+            AppEvents.post(.gamesDidChange)
+            AppEvents.post(.profileDidChange)
         } catch {
             self.errorMessage = "Failed to join game: \(error.localizedDescription)"
         }
@@ -192,11 +199,10 @@ class GameViewModel: ObservableObject {
         do {
             try await gameService.leaveGame(gameId: gameId, userId: userId)
             if let game = try await gameRepository.getGame(id: gameId) {
-                if let index = games.firstIndex(where: { $0.id == gameId }) {
-                    games[index] = game
-                }
-                selectedGame = game
+                applyLocalGameUpdate(game)
             }
+            AppEvents.post(.gamesDidChange)
+            AppEvents.post(.profileDidChange)
         } catch {
             self.errorMessage = "Failed to leave game: \(error.localizedDescription)"
         }
@@ -210,10 +216,8 @@ class GameViewModel: ObservableObject {
         do {
             let data = try Firestore.Encoder().encode(game)
             try await gameRepository.updateGame(id: game.id, data: data)
-            if let index = games.firstIndex(where: { $0.id == game.id }) {
-                games[index] = game
-            }
-            selectedGame = game
+            applyLocalGameUpdate(game)
+            AppEvents.post(.gamesDidChange)
         } catch {
             self.errorMessage = "Failed to update game: \(error.localizedDescription)"
         }
@@ -225,11 +229,9 @@ class GameViewModel: ObservableObject {
         defer { isLoading = false }
 
         do {
-            try await gameService.cancelGame(gameId: gameId, organizerId: organizerId)
-            if let index = games.firstIndex(where: { $0.id == gameId }) {
-                games[index].status = .cancelled
-            }
-            selectedGame?.status = .cancelled
+            let updatedGame = try await gameService.cancelGame(gameId: gameId, organizerId: organizerId)
+            applyLocalGameUpdate(updatedGame)
+            AppEvents.post(.gamesDidChange)
         } catch {
             self.errorMessage = "Failed to cancel game: \(error.localizedDescription)"
         }
@@ -240,7 +242,7 @@ class GameViewModel: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
-        let teams = gameService.balanceTeams(game: game)
+        let teams = await autoBalanceTeams(for: game)
         do {
             let teamsData = try teams.map { try Firestore.Encoder().encode($0) }
             try await gameRepository.updateGame(id: gameId, data: ["teams": teamsData])
@@ -248,8 +250,154 @@ class GameViewModel: ObservableObject {
                 games[index].teams = teams
             }
             selectedGame?.teams = teams
+            AppEvents.post(.gamesDidChange)
         } catch {
             self.errorMessage = "Failed to balance teams: \(error.localizedDescription)"
         }
+    }
+
+    func autoBalanceTeams(for game: Game) async -> [Team] {
+        let skillLevels = await buildSkillMap(for: game.playerIds, sportId: game.sportId)
+        return gameService.balanceTeams(game: game, skillLevelsByPlayerId: skillLevels)
+    }
+
+    func completeGame(gameId: String, organizerId: String) async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        do {
+            let completedGame = try await gameService.completeGame(gameId: gameId, organizerId: organizerId)
+            applyLocalGameUpdate(completedGame)
+
+            let histories = GameHistory.completedHistories(from: completedGame)
+            histories.forEach { gameHistoryRepo.saveToHistory($0) }
+
+            for userId in Set(histories.map(\.userId)) {
+                await refreshAchievementProgress(userId: userId)
+            }
+
+            AppEvents.post(.gamesDidChange)
+            AppEvents.post(.profileDidChange)
+        } catch {
+            self.errorMessage = "Failed to complete game: \(error.localizedDescription)"
+        }
+    }
+
+    func reloadGame(gameId: String) async {
+        do {
+            if let game = try await gameRepository.getGame(id: gameId) {
+                applyLocalGameUpdate(game)
+            }
+        } catch {
+            errorMessage = "Failed to refresh game: \(error.localizedDescription)"
+        }
+    }
+
+    private func refreshAchievementProgress(userId: String) async {
+        let history = gameHistoryRepo.getHistory(userId: userId)
+        let organizedGames = (try? await gameRepository.getGamesOrganizedBy(userId: userId)) ?? []
+        let followerCount = ((try? await userRepository.getUser(id: userId))?.followerIds.count) ?? 0
+
+        achievementRepo.syncProgress(
+            userId: userId,
+            history: history,
+            organizedGamesCount: organizedGames.count,
+            followerCount: followerCount
+        )
+    }
+
+    private func resolveSearchLocation(requested: CLLocation? = nil) async -> CLLocation {
+        if let requested {
+            return requested
+        }
+
+        if let userId = FirebaseManager.shared.auth.currentUser?.uid,
+           let prefs = userPrefsRepo.getPreferences(userId: userId),
+           !prefs.privacySettings.locationSharing {
+            return AppLocationDefaults.defaultLocation
+        }
+
+        if let currentLocation = await locationService.getCurrentLocation() {
+            return currentLocation
+        }
+
+        return AppLocationDefaults.defaultLocation
+    }
+
+    private func fetchDemoAwareGames(
+        around location: CLLocation,
+        requestedLocation: CLLocation? = nil,
+        radius: Double
+    ) async throws -> [Game] {
+        let nearbyGames = try await gameRepository.getNearbyGames(
+            latitude: location.coordinate.latitude,
+            longitude: location.coordinate.longitude,
+            radiusKm: radius
+        )
+
+        if nearbyGames.isEmpty,
+           shouldFallbackToDemoArea(from: location, requestedLocation: requestedLocation) {
+            return try await gameRepository.getNearbyGames(
+                latitude: AppLocationDefaults.defaultLocation.coordinate.latitude,
+                longitude: AppLocationDefaults.defaultLocation.coordinate.longitude,
+                radiusKm: radius
+            )
+        }
+
+        return nearbyGames
+    }
+
+    private func fetchDemoAwareVenues(
+        around location: CLLocation,
+        requestedLocation: CLLocation? = nil,
+        sportFilter: String? = nil
+    ) async throws -> [Venue] {
+        let nearbyVenues = try await venueService.fetchNearbyVenues(
+            location: location,
+            radius: 25.0,
+            sportFilter: sportFilter
+        )
+
+        if nearbyVenues.isEmpty,
+           shouldFallbackToDemoArea(from: location, requestedLocation: requestedLocation) {
+            return try await venueService.fetchNearbyVenues(
+                location: AppLocationDefaults.defaultLocation,
+                radius: 25.0,
+                sportFilter: sportFilter
+            )
+        }
+
+        return nearbyVenues
+    }
+
+    private func shouldFallbackToDemoArea(from resolvedLocation: CLLocation, requestedLocation: CLLocation?) -> Bool {
+        requestedLocation == nil &&
+        resolvedLocation.distance(from: AppLocationDefaults.defaultLocation) > 1_000
+    }
+
+    private func buildSkillMap(for playerIds: [String], sportId: String) async -> [String: SkillLevel] {
+        var skillMap: [String: SkillLevel] = [:]
+
+        for playerId in playerIds {
+            if let user = try? await userRepository.getUser(id: playerId),
+               let skill = user.sportSkills.first(where: { $0.sportId == sportId })?.level {
+                skillMap[playerId] = skill
+            }
+        }
+
+        return skillMap
+    }
+
+    private func applyLocalGameUpdate(_ game: Game) {
+        if let index = games.firstIndex(where: { $0.id == game.id }) {
+            games[index] = game
+        } else {
+            games.insert(game, at: 0)
+        }
+
+        games.sort { $0.dateTime < $1.dateTime }
+        selectedGame = game
+        cacheRepository.cacheGames(games)
     }
 }

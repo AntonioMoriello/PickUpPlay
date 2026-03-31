@@ -1,7 +1,3 @@
-//
-//  EditGameView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct EditGameView: View {

@@ -1,7 +1,3 @@
-//
-//  SportSkill.swift
-//  PickupPlay
-//
 import Foundation
 
 struct SportSkill: Codable, Hashable, Identifiable {

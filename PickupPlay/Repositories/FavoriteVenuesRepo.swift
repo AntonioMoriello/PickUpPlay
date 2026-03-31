@@ -1,7 +1,3 @@
-//
-//  FavoriteVenuesRepo.swift
-//  PickupPlay
-//
 import Foundation
 import CoreData
 

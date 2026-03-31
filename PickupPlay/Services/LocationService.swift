@@ -1,7 +1,3 @@
-//
-//  LocationService.swift
-//  PickupPlay
-//
 import Foundation
 import CoreLocation
 import Combine
@@ -25,6 +21,16 @@ class LocationService: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
 
     func getCurrentLocation() async -> CLLocation? {
+        let status = locationManager.authorizationStatus
+        if status == .notDetermined {
+            locationManager.requestWhenInUseAuthorization()
+            return nil
+        }
+
+        guard status == .authorizedWhenInUse || status == .authorizedAlways else {
+            return nil
+        }
+
         if let location = locationManager.location {
             currentLocation = location
             return location

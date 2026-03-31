@@ -1,7 +1,3 @@
-//
-//  ErrorBanner.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct ErrorBanner: View {

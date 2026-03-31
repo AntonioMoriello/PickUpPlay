@@ -1,7 +1,3 @@
-//
-//  SportSelectionView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct SportSelectionView: View {

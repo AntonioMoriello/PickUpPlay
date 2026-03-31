@@ -1,7 +1,3 @@
-//
-//  GameService.swift
-//  PickupPlay
-//
 import Foundation
 import FirebaseFirestore
 
@@ -38,10 +34,15 @@ struct GameFilterOptions {
 
 class GameService {
     private let gameRepository: GameRepository
-    private let db = FirebaseManager.shared.firestore
+    private let userRepository: UserRepository
+    private let chatService: ChatService
+    private let notificationService: NotificationService
 
     init(gameRepository: GameRepository = GameRepository()) {
         self.gameRepository = gameRepository
+        self.userRepository = UserRepository()
+        self.chatService = ChatService()
+        self.notificationService = NotificationService()
     }
 
     func validateGame(_ game: Game) -> [ValidationError] {
@@ -91,60 +92,151 @@ class GameService {
 
     func createGame(_ game: Game) async throws -> String {
         try await gameRepository.createGame(game)
-
-        let chatRoomData: [String: Any] = [
-            "id": UUID().uuidString,
-            "gameId": game.id,
-            "type": "GAME_CHAT",
-            "participantIds": game.playerIds,
-            "createdAt": Timestamp(date: Date()),
-            "updatedAt": Timestamp(date: Date()),
-            "lastMessagePreview": "Game chat created"
-        ]
-
-        let chatRoomId = chatRoomData["id"] as! String
-        try await db.collection("chatRooms").document(chatRoomId).setData(chatRoomData)
-        try await gameRepository.updateGame(id: game.id, data: ["chatRoomId": chatRoomId])
+        let chatRoom = try await chatService.createChatRoom(
+            type: .gameChat,
+            participantIds: game.playerIds,
+            gameId: game.id
+        )
+        try await gameRepository.updateGame(id: game.id, data: ["chatRoomId": chatRoom.id])
+        guard let createdGame = try await gameRepository.getGame(id: game.id) else {
+            throw NSError(domain: "GameService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Game not found"])
+        }
+        try? await notificationService.createGameNotification(game: createdGame, forUserId: game.organizerId)
+        notificationService.scheduleLocalReminder(for: createdGame, minutesBefore: 60, userId: game.organizerId)
+        AppEvents.post(.chatRoomsDidChange)
 
         return game.id
     }
 
     func joinGame(gameId: String, userId: String) async throws -> Game {
+        guard let existingGame = try await gameRepository.getGame(id: gameId) else {
+            throw NSError(domain: "GameService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Game not found"])
+        }
+        guard existingGame.status == .upcoming else {
+            throw NSError(domain: "GameService", code: 400, userInfo: [NSLocalizedDescriptionKey: "This game is no longer open for joining"])
+        }
+        guard !existingGame.isFull else {
+            throw NSError(domain: "GameService", code: 400, userInfo: [NSLocalizedDescriptionKey: "This game is already full"])
+        }
+        guard !existingGame.playerIds.contains(userId) else {
+            return existingGame
+        }
+
         try await gameRepository.joinGame(gameId: gameId, userId: userId)
+
+        if !existingGame.chatRoomId.isEmpty {
+            try await chatService.addParticipant(chatRoomId: existingGame.chatRoomId, userId: userId)
+        }
+
         guard let updated = try await gameRepository.getGame(id: gameId) else {
             throw NSError(domain: "GameService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Game not found"])
         }
+        if existingGame.organizerId != userId {
+            try? await notificationService.createNotification(
+                userId: existingGame.organizerId,
+                title: "Player Joined",
+                body: "A player joined \(existingGame.title).",
+                type: .playerJoined,
+                referenceId: gameId
+            )
+        }
+        notificationService.scheduleLocalReminder(for: updated, minutesBefore: 60, userId: userId)
+        AppEvents.post(.chatRoomsDidChange)
         return updated
     }
 
     func leaveGame(gameId: String, userId: String) async throws {
+        guard let existingGame = try await gameRepository.getGame(id: gameId) else {
+            throw NSError(domain: "GameService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Game not found"])
+        }
+        guard existingGame.organizerId != userId else {
+            throw NSError(domain: "GameService", code: 403, userInfo: [NSLocalizedDescriptionKey: "Organizers cannot leave their own game"])
+        }
+        guard existingGame.playerIds.contains(userId) else { return }
+
         try await gameRepository.leaveGame(gameId: gameId, userId: userId)
+
+        if !existingGame.chatRoomId.isEmpty {
+            try await chatService.removeParticipant(chatRoomId: existingGame.chatRoomId, userId: userId)
+        }
+
+        notificationService.cancelLocalReminder(for: gameId)
+        try? await notificationService.createNotification(
+            userId: existingGame.organizerId,
+            title: "Player Left",
+            body: "A player left \(existingGame.title).",
+            type: .playerLeft,
+            referenceId: gameId
+        )
+        AppEvents.post(.chatRoomsDidChange)
     }
 
-    func cancelGame(gameId: String, organizerId: String) async throws {
+    func cancelGame(gameId: String, organizerId: String) async throws -> Game {
         guard let game = try await gameRepository.getGame(id: gameId),
               game.organizerId == organizerId else {
             throw NSError(domain: "GameService", code: 403, userInfo: [NSLocalizedDescriptionKey: "Only the organizer can cancel this game"])
         }
         try await gameRepository.updateGame(id: gameId, data: ["status": GameStatus.cancelled.rawValue])
+        for participantId in game.playerIds where participantId != organizerId {
+            try? await notificationService.createNotification(
+                userId: participantId,
+                title: "Game Cancelled",
+                body: "\(game.title) has been cancelled by the organizer.",
+                type: .gameCancelled,
+                referenceId: game.id
+            )
+        }
+        notificationService.cancelLocalReminder(for: game.id)
+        AppEvents.post(.chatRoomsDidChange)
+        guard let updatedGame = try await gameRepository.getGame(id: gameId) else {
+            throw NSError(domain: "GameService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Game not found"])
+        }
+        return updatedGame
     }
 
-    func balanceTeams(game: Game) -> [Team] {
-        let players = game.playerIds
-        let halfCount = players.count / 2
+    func completeGame(gameId: String, organizerId: String) async throws -> Game {
+        guard let game = try await gameRepository.getGame(id: gameId),
+              game.organizerId == organizerId else {
+            throw NSError(domain: "GameService", code: 403, userInfo: [NSLocalizedDescriptionKey: "Only the organizer can complete this game"])
+        }
+        guard game.status != .cancelled else {
+            throw NSError(domain: "GameService", code: 400, userInfo: [NSLocalizedDescriptionKey: "Cancelled games cannot be completed"])
+        }
+        guard game.status != .completed else {
+            return game
+        }
 
-        var teamA = Team.new(gameId: game.id, name: "Team A")
-        var teamB = Team.new(gameId: game.id, name: "Team B")
+        let teams = game.teams.isEmpty && game.playerIds.count > 1 ? balanceTeams(game: game) : game.teams
+        let teamsData = try teams.map { try Firestore.Encoder().encode($0) }
 
-        for (index, playerId) in players.enumerated() {
-            if index < halfCount {
-                teamA.playerIds.append(playerId)
-            } else {
-                teamB.playerIds.append(playerId)
+        try await gameRepository.updateGame(id: gameId, data: [
+            "status": GameStatus.completed.rawValue,
+            "teams": teamsData
+        ])
+
+        for playerId in Set(game.playerIds) {
+            try? await userRepository.incrementGameCounts(userId: playerId, gamesPlayedDelta: 1)
+            try? await userRepository.incrementSportParticipation(userId: playerId, sportId: game.sportId)
+            if playerId != organizerId {
+                try? await notificationService.createNotification(
+                    userId: playerId,
+                    title: "Game Completed",
+                    body: "\(game.title) has been marked as completed.",
+                    type: .gameUpdate,
+                    referenceId: game.id
+                )
             }
         }
 
-        return [teamA, teamB]
+        notificationService.cancelLocalReminder(for: game.id)
+        guard let updatedGame = try await gameRepository.getGame(id: gameId) else {
+            throw NSError(domain: "GameService", code: 404, userInfo: [NSLocalizedDescriptionKey: "Game not found"])
+        }
+        return updatedGame
+    }
+
+    func balanceTeams(game: Game, skillLevelsByPlayerId: [String: SkillLevel] = [:]) -> [Team] {
+        TeamBalancer.balanceTeams(for: game, skillLevelsByPlayerId: skillLevelsByPlayerId)
     }
 
     func addPlayerToTeam(gameId: String, teamId: String, userId: String) async throws {
@@ -164,4 +256,5 @@ class GameService {
             try await gameRepository.updateGame(id: gameId, data: ["teams": teamsData])
         }
     }
+
 }

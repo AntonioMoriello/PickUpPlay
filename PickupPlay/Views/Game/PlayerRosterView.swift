@@ -1,11 +1,8 @@
-//
-//  PlayerRosterView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct PlayerRosterView: View {
     let game: Game
+    @StateObject private var playerDirectory = PlayerDirectoryViewModel()
 
     private var sportName: String {
         Sport.allSports.first(where: { $0.id == game.sportId })?.name ?? game.sportId.capitalized
@@ -75,6 +72,8 @@ struct PlayerRosterView: View {
                                 ForEach(team.playerIds, id: \.self) { playerId in
                                     PlayerRow(
                                         playerId: playerId,
+                                        displayName: playerDirectory.displayName(for: playerId),
+                                        initials: playerDirectory.initials(for: playerId),
                                         isOrganizer: playerId == game.organizerId,
                                         teamName: team.name
                                     )
@@ -105,6 +104,8 @@ struct PlayerRosterView: View {
                         ForEach(unassigned, id: \.self) { playerId in
                             PlayerRow(
                                 playerId: playerId,
+                                displayName: playerDirectory.displayName(for: playerId),
+                                initials: playerDirectory.initials(for: playerId),
                                 isOrganizer: playerId == game.organizerId,
                                 teamName: nil
                             )
@@ -119,11 +120,16 @@ struct PlayerRosterView: View {
         }
         .navigationTitle("Roster")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            Task { await playerDirectory.load(userIds: game.playerIds) }
+        }
     }
 }
 
 struct PlayerRow: View {
     let playerId: String
+    let displayName: String
+    let initials: String
     let isOrganizer: Bool
     var teamName: String?
 
@@ -133,14 +139,14 @@ struct PlayerRow: View {
                 Circle()
                     .fill(isOrganizer ? AnyShapeStyle(AppTheme.gradient) : AnyShapeStyle(Color(.systemGray5)))
                     .frame(width: 40, height: 40)
-                Text(String(playerId.prefix(1)).uppercased())
+                Text(initials)
                     .font(.headline)
                     .fontDesign(.rounded)
                     .foregroundColor(isOrganizer ? .white : .primary)
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(playerId)
+                Text(displayName)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .fontDesign(.rounded)

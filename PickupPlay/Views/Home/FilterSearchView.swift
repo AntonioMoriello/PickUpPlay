@@ -1,7 +1,3 @@
-//
-//  FilterSearchView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct FilterSearchView: View {

@@ -1,13 +1,7 @@
-//
-//  SportBrowserView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct SportBrowserView: View {
-    @StateObject private var gameViewModel = GameViewModel()
     @State private var searchText = ""
-    @State private var selectedSportId: String? = nil
 
     private var groupedSports: [(SportCategory, [Sport])] {
         let filtered = searchText.isEmpty
@@ -40,7 +34,12 @@ struct SportBrowserView: View {
                                 GridItem(.flexible())
                             ], spacing: 12) {
                                 ForEach(sports) { sport in
-                                    NavigationLink(destination: GameListView()) {
+                                    NavigationLink(
+                                        destination: GameListView(
+                                            initialSportId: sport.id,
+                                            screenTitle: sport.name
+                                        )
+                                    ) {
                                         SportBrowserCell(sport: sport)
                                     }
                                     .buttonStyle(.plain)

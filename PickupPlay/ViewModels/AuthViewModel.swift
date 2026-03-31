@@ -1,7 +1,3 @@
-//
-//  AuthViewModel.swift
-//  PickupPlay
-//
 import Foundation
 import Combine
 import FirebaseAuth
@@ -17,6 +13,7 @@ class AuthViewModel: ObservableObject {
     private let authService: AuthService
     private let userRepository: UserRepository
     private let sportRepository: SportRepository
+    private let demoDataService: DemoDataService
     private var authStateHandle: AuthStateDidChangeListenerHandle?
     private var isPerformingAuthAction = false
 
@@ -24,6 +21,7 @@ class AuthViewModel: ObservableObject {
         self.authService = AuthService()
         self.userRepository = UserRepository()
         self.sportRepository = SportRepository()
+        self.demoDataService = DemoDataService.shared
         observeAuthState()
     }
 
@@ -33,8 +31,7 @@ class AuthViewModel: ObservableObject {
                 guard let self = self else { return }
                 guard !self.isPerformingAuthAction else { return }
                 if let firebaseUser = firebaseUser {
-                    self.isAuthenticated = true
-                    await self.loadUser(id: firebaseUser.uid)
+                    await self.bootstrapAuthenticatedUser(firebaseUser)
                 } else {
                     self.isAuthenticated = false
                     self.currentUser = nil
@@ -55,16 +52,39 @@ class AuthViewModel: ObservableObject {
         do {
             let result = try await authService.signUp(email: email, password: password)
             let newUser = User.newUser(id: result.user.uid, email: email, displayName: displayName)
-            try await userRepository.createUser(newUser)
-
-            self.currentUser = newUser
+            try await userRepository.updateUser(newUser)
+            try? await sportRepository.populateSportsIfNeeded()
+            if let bootstrappedUser = await demoDataService.prepareSignedInExperience(for: result.user) {
+                self.currentUser = User(
+                    id: bootstrappedUser.id,
+                    email: bootstrappedUser.email,
+                    displayName: displayName,
+                    profileImageURL: bootstrappedUser.profileImageURL,
+                    createdAt: bootstrappedUser.createdAt,
+                    currentLocation: bootstrappedUser.currentLocation,
+                    sportSkills: bootstrappedUser.sportSkills,
+                    favoriteSports: bootstrappedUser.favoriteSports,
+                    favoriteVenueIds: bootstrappedUser.favoriteVenueIds,
+                    followingIds: bootstrappedUser.followingIds,
+                    followerIds: bootstrappedUser.followerIds,
+                    groupIds: bootstrappedUser.groupIds,
+                    reliabilityScore: bootstrappedUser.reliabilityScore,
+                    gamesPlayed: bootstrappedUser.gamesPlayed,
+                    gamesOrganized: bootstrappedUser.gamesOrganized,
+                    profileVisibility: bootstrappedUser.profileVisibility,
+                    locationSharingEnabled: bootstrappedUser.locationSharingEnabled,
+                    showOnlineStatusEnabled: bootstrappedUser.showOnlineStatusEnabled,
+                    fcmToken: bootstrappedUser.fcmToken
+                )
+                try await userRepository.updateUser(id: result.user.uid, data: [
+                    "displayName": displayName
+                ])
+            } else {
+                self.currentUser = newUser
+            }
             self.isAuthenticated = true
             self.needsOnboarding = true
-
-            do {
-                try await sportRepository.populateSportsIfNeeded()
-            } catch {
-            }
+            AppEvents.post(.profileDidChange)
         } catch {
             self.errorMessage = mapAuthError(error)
         }
@@ -77,8 +97,7 @@ class AuthViewModel: ObservableObject {
 
         do {
             let result = try await authService.signIn(email: email, password: password)
-            await loadUser(id: result.user.uid)
-            self.isAuthenticated = true
+            await bootstrapAuthenticatedUser(result.user)
         } catch {
             self.errorMessage = mapAuthError(error)
         }
@@ -107,14 +126,33 @@ class AuthViewModel: ObservableObject {
         }
     }
 
+    func refreshCurrentUser() async {
+        guard let userId = FirebaseManager.shared.auth.currentUser?.uid ?? currentUser?.id else { return }
+        await loadUser(id: userId)
+    }
+
     private func loadUser(id: String) async {
         do {
             if let user = try await userRepository.getUser(id: id) {
                 self.currentUser = user
                 self.needsOnboarding = user.sportSkills.isEmpty
+            } else if let firebaseUser = authService.currentUser, firebaseUser.uid == id,
+                      let user = try? await demoDataService.ensureUserProfile(for: firebaseUser) {
+                self.currentUser = user
+                self.needsOnboarding = user.sportSkills.isEmpty
             }
         } catch {
             self.errorMessage = "Failed to load user profile: \(error.localizedDescription)"
+        }
+    }
+
+    private func bootstrapAuthenticatedUser(_ firebaseUser: FirebaseAuth.User) async {
+        isAuthenticated = true
+        if let user = await demoDataService.prepareSignedInExperience(for: firebaseUser) {
+            currentUser = user
+            needsOnboarding = user.sportSkills.isEmpty
+        } else {
+            await loadUser(id: firebaseUser.uid)
         }
     }
 

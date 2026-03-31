@@ -1,7 +1,3 @@
-//
-//  AppTheme.swift
-//  PickupPlay
-//
 import SwiftUI
 
 enum AppTheme {

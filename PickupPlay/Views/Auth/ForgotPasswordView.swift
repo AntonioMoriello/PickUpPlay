@@ -1,7 +1,3 @@
-//
-//  ForgotPasswordView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct ForgotPasswordView: View {

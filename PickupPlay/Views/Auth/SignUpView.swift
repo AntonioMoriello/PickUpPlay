@@ -1,7 +1,3 @@
-//
-//  SignUpView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct SignUpView: View {

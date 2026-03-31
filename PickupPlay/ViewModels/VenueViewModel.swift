@@ -1,10 +1,7 @@
-//
-//  VenueViewModel.swift
-//  PickupPlay
-//
 import Foundation
 import Combine
 import CoreLocation
+import FirebaseAuth
 
 @MainActor
 class VenueViewModel: ObservableObject {
@@ -17,11 +14,15 @@ class VenueViewModel: ObservableObject {
     private let venueRepository: VenueRepository
     private let venueService: VenueService
     private let favoriteVenuesRepo: FavoriteVenuesRepo
+    private let locationService: LocationService
+    private let userPrefsRepo: UserPrefsRepo
 
     init() {
         self.venueRepository = VenueRepository()
         self.venueService = VenueService(venueRepository: venueRepository)
         self.favoriteVenuesRepo = FavoriteVenuesRepo()
+        self.locationService = LocationService()
+        self.userPrefsRepo = UserPrefsRepo()
     }
 
     func fetchNearbyVenues(location: CLLocation? = nil, sportFilter: String? = nil) async {
@@ -31,8 +32,31 @@ class VenueViewModel: ObservableObject {
 
         do {
             try await venueRepository.populateVenuesIfNeeded()
-            let loc = location ?? CLLocation(latitude: 43.6532, longitude: -79.3832)
-            venues = try await venueService.fetchNearbyVenues(location: loc, radius: 25.0, sportFilter: sportFilter)
+            let sharingDisabled: Bool
+            if let currentUserId = FirebaseManager.shared.auth.currentUser?.uid,
+               let prefs = userPrefsRepo.getPreferences(userId: currentUserId) {
+                sharingDisabled = !prefs.privacySettings.locationSharing
+            } else {
+                sharingDisabled = false
+            }
+            let deviceLocation = sharingDisabled ? nil : await locationService.getCurrentLocation()
+            let resolvedLocation = location ?? deviceLocation ?? AppLocationDefaults.defaultLocation
+            var nearbyVenues = try await venueService.fetchNearbyVenues(
+                location: resolvedLocation,
+                radius: 25.0,
+                sportFilter: sportFilter
+            )
+
+            if nearbyVenues.isEmpty,
+               shouldFallbackToDemoArea(from: resolvedLocation, requestedLocation: location) {
+                nearbyVenues = try await venueService.fetchNearbyVenues(
+                    location: AppLocationDefaults.defaultLocation,
+                    radius: 25.0,
+                    sportFilter: sportFilter
+                )
+            }
+
+            venues = nearbyVenues
         } catch {
             self.errorMessage = "Failed to fetch venues: \(error.localizedDescription)"
         }
@@ -71,6 +95,7 @@ class VenueViewModel: ObservableObject {
             _ = try await venueService.recalculateRating(venueId: review.venueId)
             await fetchReviews(venueId: review.venueId)
             await getDetails(venueId: review.venueId)
+            AppEvents.post(.venuesDidChange)
         } catch {
             self.errorMessage = "Failed to submit review: \(error.localizedDescription)"
         }
@@ -95,5 +120,10 @@ class VenueViewModel: ObservableObject {
 
     func getSavedVenues() -> [(venueId: String, venueName: String, savedAt: Date)] {
         favoriteVenuesRepo.getFavorites()
+    }
+
+    private func shouldFallbackToDemoArea(from resolvedLocation: CLLocation, requestedLocation: CLLocation?) -> Bool {
+        requestedLocation == nil &&
+        resolvedLocation.distance(from: AppLocationDefaults.defaultLocation) > 1_000
     }
 }

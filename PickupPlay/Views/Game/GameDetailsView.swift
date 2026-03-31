@@ -1,38 +1,42 @@
-//
-//  GameDetailsView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct GameDetailsView: View {
     let game: Game
     @EnvironmentObject var authViewModel: AuthViewModel
     @StateObject private var gameViewModel = GameViewModel()
+    @StateObject private var playerDirectory = PlayerDirectoryViewModel()
     @State private var showJoinConfirm = false
     @State private var showLeaveConfirm = false
     @State private var showSkillWarning = false
     @State private var showRoster = false
     @State private var showEditGame = false
     @State private var showTeamBuilder = false
+    @State private var showChat = false
+    @State private var showShare = false
+    @State private var showRatePlayers = false
 
     private var currentUserId: String {
         authViewModel.currentUser?.id ?? ""
     }
 
+    private var currentGame: Game {
+        gameViewModel.selectedGame ?? game
+    }
+
     private var isOrganizer: Bool {
-        game.organizerId == currentUserId
+        currentGame.organizerId == currentUserId
     }
 
     private var isParticipant: Bool {
-        game.playerIds.contains(currentUserId)
+        currentGame.playerIds.contains(currentUserId)
     }
 
     private var sportName: String {
-        Sport.allSports.first(where: { $0.id == game.sportId })?.name ?? game.sportId.capitalized
+        Sport.allSports.first(where: { $0.id == currentGame.sportId })?.name ?? currentGame.sportId.capitalized
     }
 
     private var sportIcon: String {
-        Sport.allSports.first(where: { $0.id == game.sportId })?.iconName ?? "sportscourt.fill"
+        Sport.allSports.first(where: { $0.id == currentGame.sportId })?.iconName ?? "sportscourt.fill"
     }
 
     var body: some View {
@@ -61,8 +65,20 @@ struct GameDetailsView: View {
                         Button { showTeamBuilder = true } label: {
                             Label("Team Builder", systemImage: "person.2.badge.gearshape")
                         }
+                        if currentGame.status == .upcoming || currentGame.status == .inProgress {
+                            Button {
+                                Task {
+                                    await gameViewModel.completeGame(
+                                        gameId: currentGame.id,
+                                        organizerId: currentUserId
+                                    )
+                                }
+                            } label: {
+                                Label("Mark Completed", systemImage: "checkmark.circle")
+                            }
+                        }
                         Button(role: .destructive) {
-                            Task { await gameViewModel.cancelGame(gameId: game.id, organizerId: currentUserId) }
+                            Task { await gameViewModel.cancelGame(gameId: currentGame.id, organizerId: currentUserId) }
                         } label: {
                             Label("Cancel Game", systemImage: "xmark.circle")
                         }
@@ -74,16 +90,16 @@ struct GameDetailsView: View {
             }
         }
         .sheet(isPresented: $showEditGame) {
-            EditGameView(game: game)
+            EditGameView(game: currentGame)
         }
         .sheet(isPresented: $showTeamBuilder) {
             NavigationStack {
-                TeamBuilderView(game: game)
+                TeamBuilderView(game: currentGame)
             }
         }
         .alert("Join Game?", isPresented: $showJoinConfirm) {
             Button("Join") {
-                Task { await gameViewModel.joinGame(gameId: game.id, userId: currentUserId) }
+                Task { await gameViewModel.joinGame(gameId: currentGame.id, userId: currentUserId) }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
@@ -95,15 +111,35 @@ struct GameDetailsView: View {
             }
             Button("Find Another", role: .cancel) {}
         } message: {
-            Text("This game is marked as \(game.skillLevel.displayName). Your skill level may not match. Continue anyway?")
+            Text("This game is marked as \(currentGame.skillLevel.displayName). Your skill level may not match. Continue anyway?")
         }
         .alert("Leave Game?", isPresented: $showLeaveConfirm) {
             Button("Leave", role: .destructive) {
-                Task { await gameViewModel.leaveGame(gameId: game.id, userId: currentUserId) }
+                Task { await gameViewModel.leaveGame(gameId: currentGame.id, userId: currentUserId) }
             }
             Button("Stay", role: .cancel) {}
         } message: {
             Text("You'll be removed from the roster.")
+        }
+        .navigationDestination(isPresented: $showChat) {
+            ChatRoomView(chatRoomId: currentGame.chatRoomId)
+        }
+        .sheet(isPresented: $showShare) {
+            ShareToSocialView(game: currentGame)
+        }
+        .sheet(isPresented: $showRatePlayers) {
+            RatePlayersView(game: currentGame)
+        }
+        .onAppear {
+            gameViewModel.selectedGame = game
+            Task { await playerDirectory.load(userIds: game.playerIds) }
+            Task { await gameViewModel.reloadGame(gameId: game.id) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gamesDidChange)) { _ in
+            Task { await gameViewModel.reloadGame(gameId: currentGame.id) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .profileDidChange)) { _ in
+            Task { await playerDirectory.load(userIds: currentGame.playerIds) }
         }
         .errorBanner(message: $gameViewModel.errorMessage)
         .loading(isLoading: gameViewModel.isLoading)
@@ -120,19 +156,19 @@ struct GameDetailsView: View {
                     .foregroundStyle(AppTheme.gradient)
             }
 
-            Text(game.title)
+            Text(currentGame.title)
                 .font(.title2)
                 .fontWeight(.bold)
                 .fontDesign(.rounded)
                 .multilineTextAlignment(.center)
 
             HStack(spacing: 12) {
-                StatusBadge(status: game.status)
-                SkillLevelBadge(level: game.skillLevel)
+                StatusBadge(status: currentGame.status)
+                SkillLevelBadge(level: currentGame.skillLevel)
             }
 
-            if !game.description.isEmpty {
-                Text(game.description)
+            if !currentGame.description.isEmpty {
+                Text(currentGame.description)
                     .font(.subheadline)
                     .fontDesign(.rounded)
                     .foregroundColor(.secondary)
@@ -147,9 +183,9 @@ struct GameDetailsView: View {
         VStack(spacing: 16) {
             InfoRow(icon: "sportscourt.fill", label: "Sport", value: sportName)
             Divider()
-            InfoRow(icon: "calendar", label: "Date", value: game.dateTime.formatted(date: .abbreviated, time: .omitted))
+            InfoRow(icon: "calendar", label: "Date", value: currentGame.dateTime.formatted(date: .abbreviated, time: .omitted))
             Divider()
-            InfoRow(icon: "clock.fill", label: "Time", value: game.dateTime.formatted(date: .omitted, time: .shortened))
+            InfoRow(icon: "clock.fill", label: "Time", value: currentGame.dateTime.formatted(date: .omitted, time: .shortened))
             Divider()
             HStack(spacing: 12) {
                 Image(systemName: "person.2.fill")
@@ -161,11 +197,11 @@ struct GameDetailsView: View {
                     .fontDesign(.rounded)
                     .foregroundColor(.secondary)
                 Spacer()
-                Text("\(game.currentPlayers) / \(game.maxPlayers)")
+                Text("\(currentGame.currentPlayers) / \(currentGame.maxPlayers)")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .fontDesign(.rounded)
-                    .foregroundColor(game.isFull ? AppTheme.accentRose : AppTheme.accentGreen)
+                    .foregroundColor(currentGame.isFull ? AppTheme.accentRose : AppTheme.accentGreen)
             }
         }
         .padding(20)
@@ -176,7 +212,7 @@ struct GameDetailsView: View {
     private var rosterPreviewSection: some View {
         VStack(spacing: 12) {
             HStack {
-                SectionHeader(title: "Roster (\(game.currentPlayers))", icon: "person.3.fill")
+                SectionHeader(title: "Roster (\(currentGame.currentPlayers))", icon: "person.3.fill")
                 Spacer()
                 Button("View All") {
                     showRoster = true
@@ -189,18 +225,22 @@ struct GameDetailsView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(game.playerIds, id: \.self) { playerId in
+                    ForEach(currentGame.playerIds, id: \.self) { playerId in
                         VStack(spacing: 6) {
                             ZStack {
                                 Circle()
                                     .fill(AppTheme.gradient)
                                     .frame(width: 44, height: 44)
-                                Text(String(playerId.prefix(1)).uppercased())
+                                Text(playerDirectory.initials(for: playerId))
                                     .font(.headline)
                                     .fontDesign(.rounded)
                                     .foregroundColor(.white)
                             }
-                            Text(playerId == game.organizerId ? "Host" : "Player")
+                            Text(playerDirectory.displayName(for: playerId))
+                                .font(.caption2)
+                                .fontDesign(.rounded)
+                                .foregroundColor(.secondary)
+                            Text(playerId == currentGame.organizerId ? "Host" : "Player")
                                 .font(.caption2)
                                 .fontDesign(.rounded)
                                 .foregroundColor(.secondary)
@@ -211,13 +251,38 @@ struct GameDetailsView: View {
             }
         }
         .navigationDestination(isPresented: $showRoster) {
-            PlayerRosterView(game: game)
+            PlayerRosterView(game: currentGame)
         }
     }
 
     private var actionSection: some View {
         VStack(spacing: 12) {
-            if game.status == .cancelled {
+            if isParticipant && !currentGame.chatRoomId.isEmpty {
+                HStack(spacing: 12) {
+                    Button {
+                        showChat = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "message.fill")
+                            Text("Chat")
+                        }
+                    }
+                    .buttonStyle(AppSecondaryButtonStyle())
+
+                    Button {
+                        showShare = true
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Share")
+                        }
+                    }
+                    .buttonStyle(AppSecondaryButtonStyle())
+                }
+                .padding(.horizontal, 20)
+            }
+
+            if currentGame.status == .cancelled {
                 Text("This game has been cancelled")
                     .font(.subheadline)
                     .fontDesign(.rounded)
@@ -226,6 +291,12 @@ struct GameDetailsView: View {
                     .frame(maxWidth: .infinity)
                     .glassCard(padding: 0)
                     .padding(.horizontal, 16)
+            } else if currentGame.status == .completed && isParticipant {
+                Button("Rate Players") {
+                    showRatePlayers = true
+                }
+                .buttonStyle(AppPrimaryButtonStyle())
+                .padding(.horizontal, 20)
             } else if isParticipant {
                 if !isOrganizer {
                     Button("Leave Game") {
@@ -234,13 +305,13 @@ struct GameDetailsView: View {
                     .buttonStyle(AppSecondaryButtonStyle())
                     .padding(.horizontal, 20)
                 }
-            } else if !game.isFull && game.status == .upcoming {
+            } else if !currentGame.isFull && currentGame.status == .upcoming {
                 Button("Join Game") {
                     handleJoinTap()
                 }
                 .buttonStyle(AppPrimaryButtonStyle())
                 .padding(.horizontal, 20)
-            } else if game.isFull {
+            } else if currentGame.isFull {
                 Text("This game is full")
                     .font(.subheadline)
                     .fontDesign(.rounded)
@@ -254,10 +325,10 @@ struct GameDetailsView: View {
     }
 
     private func handleJoinTap() {
-        if let userSkill = authViewModel.currentUser?.sportSkills.first(where: { $0.sportId == game.sportId }) {
+        if let userSkill = authViewModel.currentUser?.sportSkills.first(where: { $0.sportId == currentGame.sportId }) {
             let skillOrder: [SkillLevel] = [.beginner, .intermediate, .advanced, .expert]
             let userIndex = skillOrder.firstIndex(of: userSkill.level) ?? 0
-            let gameIndex = skillOrder.firstIndex(of: game.skillLevel) ?? 0
+            let gameIndex = skillOrder.firstIndex(of: currentGame.skillLevel) ?? 0
             if abs(userIndex - gameIndex) > 1 {
                 showSkillWarning = true
                 return

@@ -1,14 +1,14 @@
-//
-//  HomeView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct HomeView: View {
+    var onCreateGame: () -> Void = {}
+    var onOpenMap: () -> Void = {}
+
     @EnvironmentObject var authViewModel: AuthViewModel
     @StateObject private var gameViewModel = GameViewModel()
     @State private var animateCards = false
     @State private var showAllGames = false
+    @State private var showSportBrowser = false
 
     var body: some View {
         NavigationStack {
@@ -55,10 +55,14 @@ struct HomeView: View {
                         .offset(y: animateCards ? 0 : 20)
 
                         HStack(spacing: 12) {
-                            QuickActionButton(icon: "plus.circle.fill", title: "Create", color: AppTheme.accentGreen) {}
-                            QuickActionButton(icon: "map.fill", title: "Map", color: AppTheme.accentCyan) {}
+                            QuickActionButton(icon: "plus.circle.fill", title: "Create", color: AppTheme.accentGreen) {
+                                onCreateGame()
+                            }
+                            QuickActionButton(icon: "map.fill", title: "Map", color: AppTheme.accentCyan) {
+                                onOpenMap()
+                            }
                             QuickActionButton(icon: "magnifyingglass", title: "Browse", color: AppTheme.accentAmber) {
-                                showAllGames = true
+                                showSportBrowser = true
                             }
                         }
                         .padding(.horizontal, 16)
@@ -119,17 +123,29 @@ struct HomeView: View {
             .navigationDestination(isPresented: $showAllGames) {
                 GameListView()
             }
+            .navigationDestination(isPresented: $showSportBrowser) {
+                SportBrowserView()
+            }
             .onAppear {
                 withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1)) {
                     animateCards = true
                 }
-                Task {
-                    await gameViewModel.fetchNearbyGames()
-                }
+                Task { await refreshHomeData() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .gamesDidChange)) { _ in
+                Task { await gameViewModel.fetchNearbyGames() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .profileDidChange)) { _ in
+                Task { await authViewModel.refreshCurrentUser() }
             }
             .errorBanner(message: $gameViewModel.errorMessage)
             .loading(isLoading: false)
         }
+    }
+
+    private func refreshHomeData() async {
+        await authViewModel.refreshCurrentUser()
+        await gameViewModel.fetchNearbyGames()
     }
 }
 

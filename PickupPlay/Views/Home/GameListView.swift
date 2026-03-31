@@ -1,13 +1,16 @@
-//
-//  GameListView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct GameListView: View {
     @StateObject private var gameViewModel = GameViewModel()
     @State private var showFilters = false
     @State private var searchText = ""
+    private let initialSportId: String?
+    private let screenTitle: String
+
+    init(initialSportId: String? = nil, screenTitle: String = "Games") {
+        self.initialSportId = initialSportId
+        self.screenTitle = screenTitle
+    }
 
     private var filteredGames: [Game] {
         if searchText.isEmpty {
@@ -35,7 +38,7 @@ struct GameListView: View {
                 ) {
                     searchText = ""
                     gameViewModel.filterOptions = .default
-                    Task { await gameViewModel.fetchNearbyGames() }
+                    Task { await loadGames() }
                 }
             } else {
                 ScrollView {
@@ -52,11 +55,11 @@ struct GameListView: View {
                     .padding(.bottom, 40)
                 }
                 .refreshable {
-                    await gameViewModel.fetchNearbyGames()
+                    await loadGames()
                 }
             }
         }
-        .navigationTitle("Games")
+        .navigationTitle(screenTitle)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $searchText, prompt: "Search games...")
         .toolbar {
@@ -71,13 +74,33 @@ struct GameListView: View {
         }
         .sheet(isPresented: $showFilters) {
             FilterSearchView(filterOptions: $gameViewModel.filterOptions) {
-                Task { await gameViewModel.applyFilters(gameViewModel.filterOptions) }
+                Task { await loadGames() }
             }
             .presentationDetents([.medium, .large])
         }
         .onAppear {
-            Task { await gameViewModel.fetchNearbyGames() }
+            Task { await loadGames() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .gamesDidChange)) { _ in
+            Task { await loadGames() }
         }
         .errorBanner(message: $gameViewModel.errorMessage)
+    }
+
+    private func loadGames() async {
+        if let initialSportId, !initialSportId.isEmpty {
+            gameViewModel.filterOptions.sportId = initialSportId
+        }
+
+        let hasFilters = gameViewModel.filterOptions.sportId != nil
+            || gameViewModel.filterOptions.skillLevel != nil
+            || gameViewModel.filterOptions.dateRange != .any
+            || gameViewModel.filterOptions.maxDistance != GameFilterOptions.default.maxDistance
+
+        if hasFilters {
+            await gameViewModel.applyFilters(gameViewModel.filterOptions)
+        } else {
+            await gameViewModel.fetchNearbyGames()
+        }
     }
 }

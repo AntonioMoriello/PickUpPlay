@@ -1,7 +1,3 @@
-//
-//  LocationPermissionView.swift
-//  PickupPlay
-//
 import SwiftUI
 import Combine
 import CoreLocation
@@ -11,6 +7,7 @@ struct LocationPermissionView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @StateObject private var locationManager = LocationPermissionManager()
     @State private var animatePulse = false
+    @State private var awaitingPermissionDecision = false
 
     var body: some View {
         ZStack {
@@ -65,8 +62,12 @@ struct LocationPermissionView: View {
 
                 VStack(spacing: 14) {
                     Button {
-                        locationManager.requestPermission()
-                        completeOnboarding()
+                        if locationManager.authorizationStatus == .notDetermined {
+                            awaitingPermissionDecision = true
+                            locationManager.requestPermission()
+                        } else {
+                            completeOnboarding()
+                        }
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "location.fill")
@@ -100,6 +101,13 @@ struct LocationPermissionView: View {
             }
         }
         .loading(onboardingVM.isLoading, message: "Saving preferences...")
+        .onChange(of: locationManager.authorizationStatus) { _, newValue in
+            guard awaitingPermissionDecision else { return }
+            guard newValue != .notDetermined else { return }
+
+            awaitingPermissionDecision = false
+            completeOnboarding()
+        }
     }
 
     private func completeOnboarding() {

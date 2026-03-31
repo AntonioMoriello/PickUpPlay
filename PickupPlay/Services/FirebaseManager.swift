@@ -1,7 +1,3 @@
-//
-//  FirebaseManager.swift
-//  PickupPlay
-//
 import Foundation
 import FirebaseCore
 import FirebaseAuth

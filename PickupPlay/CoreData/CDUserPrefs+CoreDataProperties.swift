@@ -18,6 +18,9 @@ extension CDUserPrefs {
     @NSManaged public var lastSyncDate: Date?
     @NSManaged public var preferredMapZoom: Double
     @NSManaged public var defaultSportFilter: String?
+    @NSManaged public var notificationPrefsData: String?
+    @NSManaged public var privacySettingsData: String?
+    @NSManaged public var sportPreferencesData: String?
 }
 
 extension CDUserPrefs: Identifiable {

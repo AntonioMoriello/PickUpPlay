@@ -1,7 +1,3 @@
-//
-//  SkillLevel.swift
-//  PickupPlay
-//
 import Foundation
 
 enum SkillLevel: String, Codable, CaseIterable, Identifiable {

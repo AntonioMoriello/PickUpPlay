@@ -1,8 +1,5 @@
-//
-//  GameRepository.swift
-//  PickupPlay
-//
 import Foundation
+import CoreLocation
 import FirebaseFirestore
 
 class GameRepository {
@@ -29,13 +26,36 @@ class GameRepository {
     func getNearbyGames(latitude: Double, longitude: Double, radiusKm: Double) async throws -> [Game] {
         let snapshot = try await db.collection(collection)
             .whereField("status", isEqualTo: GameStatus.upcoming.rawValue)
-            .limit(to: 50)
             .getDocuments()
+
+        let searchLocation = CLLocation(latitude: latitude, longitude: longitude)
+        let maxDistanceMeters = radiusKm * 1_000
 
         return snapshot.documents.compactMap { doc in
             try? doc.data(as: Game.self)
         }
-        .sorted { $0.dateTime < $1.dateTime }
+        .filter { game in
+            let gameLocation = CLLocation(
+                latitude: game.location.latitude,
+                longitude: game.location.longitude
+            )
+            return searchLocation.distance(from: gameLocation) <= maxDistanceMeters
+        }
+        .sorted { lhs, rhs in
+            let lhsDistance = searchLocation.distance(from: CLLocation(
+                latitude: lhs.location.latitude,
+                longitude: lhs.location.longitude
+            ))
+            let rhsDistance = searchLocation.distance(from: CLLocation(
+                latitude: rhs.location.latitude,
+                longitude: rhs.location.longitude
+            ))
+
+            if lhsDistance == rhsDistance {
+                return lhs.dateTime < rhs.dateTime
+            }
+            return lhsDistance < rhsDistance
+        }
     }
 
     func getGamesForSport(sportId: String) async throws -> [Game] {

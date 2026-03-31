@@ -1,7 +1,3 @@
-//
-//  MapView.swift
-//  PickupPlay
-//
 import SwiftUI
 import MapKit
 
@@ -12,13 +8,20 @@ struct GameMapView: View {
     @State private var selectedGame: Game? = nil
     @State private var showGameDetails = false
     @State private var showVenueDetails = false
+    @State private var showVenueMap = false
+    @State private var showSavedVenues = false
     @State private var selectedVenueForDetails: Venue? = nil
-    @State private var mapPosition: MapCameraPosition = .region(
-        MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 43.6532, longitude: -79.3832),
-            span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
+    @State private var mapPosition: MapCameraPosition = .region(AppLocationDefaults.defaultRegion)
+
+    private var mapErrorMessage: Binding<String?> {
+        Binding(
+            get: { gameViewModel.errorMessage ?? venueViewModel.errorMessage },
+            set: { _ in
+                gameViewModel.errorMessage = nil
+                venueViewModel.errorMessage = nil
+            }
         )
-    )
+    }
 
     var body: some View {
         NavigationStack {
@@ -93,10 +96,37 @@ struct GameMapView: View {
             }
             .navigationTitle("Map")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            showVenueMap = true
+                        } label: {
+                            Label("Venue Explorer", systemImage: "mappin.and.ellipse")
+                        }
+
+                        Button {
+                            showSavedVenues = true
+                        } label: {
+                            Label("Saved Venues", systemImage: "heart.fill")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundStyle(AppTheme.gradient)
+                    }
+                }
+            }
+            .errorBanner(message: mapErrorMessage)
             .navigationDestination(isPresented: $showGameDetails) {
                 if let game = selectedGame {
                     GameDetailsView(game: game)
                 }
+            }
+            .navigationDestination(isPresented: $showVenueMap) {
+                VenueMapView()
+            }
+            .navigationDestination(isPresented: $showSavedVenues) {
+                SavedVenuesView()
             }
             .sheet(isPresented: $showVenueDetails) {
                 if let venue = selectedVenueForDetails {
@@ -107,13 +137,29 @@ struct GameMapView: View {
                 }
             }
             .onAppear {
-                Task {
-                    await gameViewModel.fetchNearbyGames()
-                    mapViewModel.updateAnnotations(games: gameViewModel.games)
-                    await venueViewModel.fetchNearbyVenues()
-                    mapViewModel.updateVenueAnnotations(venues: venueViewModel.venues)
-                }
+                Task { await refreshMapData() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .gamesDidChange)) { _ in
+                Task { await refreshGames() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .venuesDidChange)) { _ in
+                Task { await refreshVenues() }
             }
         }
+    }
+
+    private func refreshMapData() async {
+        await refreshGames()
+        await refreshVenues()
+    }
+
+    private func refreshGames() async {
+        await gameViewModel.fetchNearbyGames()
+        mapViewModel.updateAnnotations(games: gameViewModel.games)
+    }
+
+    private func refreshVenues() async {
+        await venueViewModel.fetchNearbyVenues()
+        mapViewModel.updateVenueAnnotations(venues: venueViewModel.venues)
     }
 }

@@ -1,7 +1,3 @@
-//
-//  User.swift
-//  PickupPlay
-//
 import Foundation
 import FirebaseFirestore
 
@@ -21,6 +17,10 @@ struct User: Identifiable, Codable, Hashable {
     var reliabilityScore: Double
     var gamesPlayed: Int
     var gamesOrganized: Int
+    var profileVisibility: PrivacySettings.ProfileVisibility? = .everyone
+    var locationSharingEnabled: Bool? = true
+    var showOnlineStatusEnabled: Bool? = true
+    var fcmToken: String? = nil
 
     nonisolated func hash(into hasher: inout Hasher) {
         hasher.combine(id)
@@ -48,7 +48,11 @@ extension User {
             groupIds: [],
             reliabilityScore: 5.0,
             gamesPlayed: 0,
-            gamesOrganized: 0
+            gamesOrganized: 0,
+            profileVisibility: .everyone,
+            locationSharingEnabled: true,
+            showOnlineStatusEnabled: true,
+            fcmToken: nil
         )
     }
 }

@@ -1,7 +1,3 @@
-//
-//  Game.swift
-//  PickupPlay
-//
 import Foundation
 import FirebaseFirestore
 

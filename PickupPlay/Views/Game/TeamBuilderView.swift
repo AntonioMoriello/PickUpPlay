@@ -1,12 +1,9 @@
-//
-//  TeamBuilderView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct TeamBuilderView: View {
     let game: Game
     @StateObject private var gameViewModel = GameViewModel()
+    @StateObject private var playerDirectory = PlayerDirectoryViewModel()
     @Environment(\.dismiss) private var dismiss
     @State private var teams: [Team] = []
     @State private var showAutoBalance = false
@@ -39,9 +36,9 @@ struct TeamBuilderView: View {
                                 .buttonStyle(AppPrimaryButtonStyle())
 
                                 Button("Auto-Balance") {
-                                    teams = gameViewModel.games.isEmpty
-                                        ? GameService().balanceTeams(game: game)
-                                        : GameService().balanceTeams(game: game)
+                                    Task {
+                                        teams = await gameViewModel.autoBalanceTeams(for: game)
+                                    }
                                 }
                                 .buttonStyle(AppSecondaryButtonStyle())
                             }
@@ -90,12 +87,12 @@ struct TeamBuilderView: View {
                                                 Circle()
                                                     .fill(Color(.systemGray5))
                                                     .frame(width: 32, height: 32)
-                                                Text(String(playerId.prefix(1)).uppercased())
+                                                Text(playerDirectory.initials(for: playerId))
                                                     .font(.caption)
                                                     .fontWeight(.bold)
                                                     .fontDesign(.rounded)
                                             }
-                                            Text(playerId)
+                                            Text(playerDirectory.displayName(for: playerId))
                                                 .font(.subheadline)
                                                 .fontDesign(.rounded)
                                                 .lineLimit(1)
@@ -127,12 +124,12 @@ struct TeamBuilderView: View {
                                             Circle()
                                                 .fill(AppTheme.accentAmber.opacity(0.15))
                                                 .frame(width: 32, height: 32)
-                                            Text(String(playerId.prefix(1)).uppercased())
+                                            Text(playerDirectory.initials(for: playerId))
                                                 .font(.caption)
                                                 .fontWeight(.bold)
                                                 .fontDesign(.rounded)
                                         }
-                                        Text(playerId)
+                                        Text(playerDirectory.displayName(for: playerId))
                                             .font(.subheadline)
                                             .fontDesign(.rounded)
                                             .lineLimit(1)
@@ -160,8 +157,9 @@ struct TeamBuilderView: View {
 
                         HStack(spacing: 12) {
                             Button("Auto-Balance") {
-                                let service = GameService()
-                                teams = service.balanceTeams(game: game)
+                                Task {
+                                    teams = await gameViewModel.autoBalanceTeams(for: game)
+                                }
                             }
                             .buttonStyle(AppSecondaryButtonStyle())
 
@@ -189,6 +187,7 @@ struct TeamBuilderView: View {
         }
         .onAppear {
             teams = game.teams
+            Task { await playerDirectory.load(userIds: game.playerIds) }
         }
         .errorBanner(message: $gameViewModel.errorMessage)
         .loading(isLoading: gameViewModel.isLoading)

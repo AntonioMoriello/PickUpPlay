@@ -1,7 +1,3 @@
-//
-//  VenueService.swift
-//  PickupPlay
-//
 import Foundation
 import CoreLocation
 import MapKit
@@ -21,10 +17,31 @@ class VenueService {
             radiusKm: radius
         )
 
+        let maxDistanceMeters = radius * 1_000
+        let nearbyVenues = allVenues
+            .filter { venue in
+                let venueLocation = CLLocation(
+                    latitude: venue.coordinates.latitude,
+                    longitude: venue.coordinates.longitude
+                )
+                return location.distance(from: venueLocation) <= maxDistanceMeters
+            }
+            .sorted { lhs, rhs in
+                let lhsDistance = location.distance(from: CLLocation(
+                    latitude: lhs.coordinates.latitude,
+                    longitude: lhs.coordinates.longitude
+                ))
+                let rhsDistance = location.distance(from: CLLocation(
+                    latitude: rhs.coordinates.latitude,
+                    longitude: rhs.coordinates.longitude
+                ))
+                return lhsDistance < rhsDistance
+            }
+
         if let sportFilter = sportFilter, !sportFilter.isEmpty {
-            return allVenues.filter { $0.sportTypes.contains(sportFilter) }
+            return nearbyVenues.filter { $0.sportTypes.contains(sportFilter) }
         }
-        return allVenues
+        return nearbyVenues
     }
 
     func getVenueDetails(venueId: String) async throws -> Venue {
@@ -39,8 +56,8 @@ class VenueService {
             latitude: venue.coordinates.latitude,
             longitude: venue.coordinates.longitude
         )
-        let location = CLLocation(latitude: coordinate.latitude, longitude: coordinate.longitude)
-        let mapItem = MKMapItem(location: location, address: nil)
+        let placemark = MKPlacemark(coordinate: coordinate)
+        let mapItem = MKMapItem(placemark: placemark)
         mapItem.name = venue.name
         mapItem.openInMaps(launchOptions: [
             MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDriving

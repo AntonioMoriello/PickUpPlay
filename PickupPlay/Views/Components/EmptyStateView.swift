@@ -1,7 +1,3 @@
-//
-//  EmptyStateView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct EmptyStateView: View {

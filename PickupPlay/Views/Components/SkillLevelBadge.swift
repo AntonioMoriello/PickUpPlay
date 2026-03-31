@@ -1,7 +1,3 @@
-//
-//  SkillLevelBadge.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct SkillLevelBadge: View {

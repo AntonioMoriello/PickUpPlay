@@ -1,7 +1,3 @@
-//
-//  OnboardingViewModel.swift
-//  PickupPlay
-//
 import Foundation
 import Combine
 import CoreLocation

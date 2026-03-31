@@ -1,7 +1,3 @@
-//
-//  AuthService.swift
-//  PickupPlay
-//
 import Foundation
 import FirebaseAuth
 

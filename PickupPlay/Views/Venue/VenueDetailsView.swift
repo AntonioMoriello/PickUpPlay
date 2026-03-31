@@ -1,7 +1,3 @@
-//
-//  VenueDetailsView.swift
-//  PickupPlay
-//
 import SwiftUI
 import MapKit
 import FirebaseFirestore

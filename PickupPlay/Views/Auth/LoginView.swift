@@ -1,7 +1,3 @@
-//
-//  LoginView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct LoginView: View {

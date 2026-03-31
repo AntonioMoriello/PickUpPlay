@@ -1,7 +1,3 @@
-//
-//  MapAnnotationView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct GameMapPin: View {

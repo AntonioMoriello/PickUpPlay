@@ -1,7 +1,3 @@
-//
-//  Team.swift
-//  PickupPlay
-//
 import Foundation
 
 struct Team: Identifiable, Codable {

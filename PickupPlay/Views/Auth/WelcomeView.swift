@@ -1,7 +1,3 @@
-//
-//  WelcomeView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct WelcomeView: View {

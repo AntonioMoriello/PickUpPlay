@@ -1,7 +1,3 @@
-//
-//  VenueReviewsView.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct VenueReviewsView: View {

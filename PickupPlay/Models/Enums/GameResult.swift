@@ -1,7 +1,3 @@
-//
-//  GameResult.swift
-//  PickupPlay
-//
 import Foundation
 
 enum GameResult: String, Codable, CaseIterable {

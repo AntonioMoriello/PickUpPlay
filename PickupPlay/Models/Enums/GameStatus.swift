@@ -1,7 +1,3 @@
-//
-//  GameStatus.swift
-//  PickupPlay
-//
 import Foundation
 
 enum GameStatus: String, Codable, CaseIterable, Identifiable {

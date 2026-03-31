@@ -1,7 +1,3 @@
-//
-//  VenueReview.swift
-//  PickupPlay
-//
 import Foundation
 
 struct VenueReview: Identifiable, Codable {

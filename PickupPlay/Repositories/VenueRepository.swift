@@ -1,7 +1,3 @@
-//
-//  VenueRepository.swift
-//  PickupPlay
-//
 import Foundation
 import FirebaseFirestore
 
@@ -16,7 +12,6 @@ class VenueRepository {
 
     func getNearbyVenues(latitude: Double, longitude: Double, radiusKm: Double) async throws -> [Venue] {
         let snapshot = try await db.collection(collection)
-            .limit(to: 50)
             .getDocuments()
 
         return snapshot.documents.compactMap { doc in
@@ -57,14 +52,57 @@ class VenueRepository {
     }
 
     func populateVenuesIfNeeded() async throws {
-        let snapshot = try await db.collection(collection).limit(to: 1).getDocuments()
-        guard snapshot.documents.isEmpty else { return }
+        let sampleVenueIDs = Venue.sampleVenues.map(\.id)
+        let snapshot = try await db.collection(collection)
+            .whereField(FieldPath.documentID(), in: sampleVenueIDs)
+            .getDocuments()
 
         let batch = db.batch()
+        var hasWrites = false
+        let existingVenues: [String: Venue] = Dictionary(uniqueKeysWithValues: snapshot.documents.compactMap { document in
+            guard let venue = try? document.data(as: Venue.self) else { return nil }
+            return (venue.id, venue)
+        })
+
         for venue in Venue.sampleVenues {
             let ref = db.collection(collection).document(venue.id)
-            try batch.setData(from: venue, forDocument: ref)
+            if let existing = existingVenues[venue.id] {
+                guard needsSampleVenueSync(existing: existing, sample: venue) else { continue }
+                batch.setData(sampleVenueMetadata(for: venue), forDocument: ref, merge: true)
+            } else {
+                try batch.setData(from: venue, forDocument: ref)
+            }
+            hasWrites = true
         }
+
+        guard hasWrites else { return }
         try await batch.commit()
+    }
+
+    private func sampleVenueMetadata(for venue: Venue) -> [String: Any] {
+        [
+            "name": venue.name,
+            "address": venue.address,
+            "coordinates": venue.coordinates,
+            "sportTypes": venue.sportTypes,
+            "amenities": venue.amenities,
+            "photoURLs": venue.photoURLs,
+            "operatingHours": venue.operatingHours,
+            "isPublic": venue.isPublic,
+            "isVerified": venue.isVerified
+        ]
+    }
+
+    private func needsSampleVenueSync(existing: Venue, sample: Venue) -> Bool {
+        existing.name != sample.name ||
+        existing.address != sample.address ||
+        existing.coordinates.latitude != sample.coordinates.latitude ||
+        existing.coordinates.longitude != sample.coordinates.longitude ||
+        existing.sportTypes != sample.sportTypes ||
+        existing.amenities != sample.amenities ||
+        existing.photoURLs != sample.photoURLs ||
+        existing.operatingHours != sample.operatingHours ||
+        existing.isPublic != sample.isPublic ||
+        existing.isVerified != sample.isVerified
     }
 }

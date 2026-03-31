@@ -1,7 +1,3 @@
-//
-//  MapViewModel.swift
-//  PickupPlay
-//
 import Foundation
 import MapKit
 import Combine
@@ -32,16 +28,13 @@ enum MapMode: String, CaseIterable {
 
 @MainActor
 class MapViewModel: ObservableObject {
-    @Published var region = MKCoordinateRegion(
-        center: CLLocationCoordinate2D(latitude: 43.6532, longitude: -79.3832),
-        span: MKCoordinateSpan(latitudeDelta: 0.05, longitudeDelta: 0.05)
-    )
+    @Published var region = AppLocationDefaults.defaultRegion
     @Published var gameAnnotations: [GameAnnotation] = []
     @Published var venueAnnotations: [VenueAnnotation] = []
     @Published var selectedGameAnnotation: GameAnnotation? = nil
     @Published var selectedVenueAnnotation: VenueAnnotation? = nil
     @Published var userLocation: CLLocation? = nil
-    @Published var mapMode: MapMode = .games
+    @Published var mapMode: MapMode = .venues
 
     private let locationService: LocationService
 

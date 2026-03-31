@@ -1,7 +1,3 @@
-//
-//  PickupPlayApp.swift
-//  PickupPlay
-//
 import SwiftUI
 import FirebaseCore
 

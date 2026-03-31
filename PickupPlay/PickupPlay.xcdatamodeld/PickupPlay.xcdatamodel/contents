@@ -5,6 +5,9 @@
         <attribute name="lastSyncDate" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
         <attribute name="preferredMapZoom" optional="YES" attributeType="Double" defaultValueString="0.0" usesScalarValueType="YES"/>
         <attribute name="defaultSportFilter" optional="YES" attributeType="String"/>
+        <attribute name="notificationPrefsData" optional="YES" attributeType="String"/>
+        <attribute name="privacySettingsData" optional="YES" attributeType="String"/>
+        <attribute name="sportPreferencesData" optional="YES" attributeType="String"/>
     </entity>
     <entity name="CDGameHistory" representedClassName="CDGameHistory" syncable="YES">
         <attribute name="id" optional="YES" attributeType="String"/>
@@ -28,10 +31,24 @@
         <attribute name="gameData" optional="YES" attributeType="Transformable" valueTransformerName="NSSecureUnarchiveFromDataTransformerName"/>
         <attribute name="cachedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
     </entity>
+    <entity name="CDAchievement" representedClassName="CDAchievement" syncable="YES">
+        <attribute name="id" optional="YES" attributeType="String"/>
+        <attribute name="userId" optional="YES" attributeType="String"/>
+        <attribute name="name" optional="YES" attributeType="String"/>
+        <attribute name="achievementDescription" optional="YES" attributeType="String"/>
+        <attribute name="iconName" optional="YES" attributeType="String"/>
+        <attribute name="type" optional="YES" attributeType="String"/>
+        <attribute name="sportId" optional="YES" attributeType="String"/>
+        <attribute name="requirement" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="currentProgress" optional="YES" attributeType="Integer 32" defaultValueString="0" usesScalarValueType="YES"/>
+        <attribute name="isUnlocked" optional="YES" attributeType="Boolean" defaultValueString="NO" usesScalarValueType="YES"/>
+        <attribute name="unlockedAt" optional="YES" attributeType="Date" usesScalarValueType="NO"/>
+    </entity>
     <elements>
         <element name="CDUserPrefs" positionX="-63" positionY="-18" width="128" height="103"/>
         <element name="CDGameHistory" positionX="160" positionY="-18" width="128" height="193"/>
         <element name="CDFavoriteVenue" positionX="160" positionY="200" width="128" height="88"/>
         <element name="CDCachedGame" positionX="-63" positionY="200" width="128" height="88"/>
+        <element name="CDAchievement" positionX="380" positionY="-18" width="128" height="193"/>
     </elements>
 </model>

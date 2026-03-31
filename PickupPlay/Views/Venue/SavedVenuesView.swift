@@ -1,7 +1,3 @@
-//
-//  SavedVenuesView.swift
-//  PickupPlay
-//
 import SwiftUI
 import FirebaseFirestore
 

@@ -1,7 +1,3 @@
-//
-//  LoadingOverlay.swift
-//  PickupPlay
-//
 import SwiftUI
 
 struct LoadingOverlay: View {

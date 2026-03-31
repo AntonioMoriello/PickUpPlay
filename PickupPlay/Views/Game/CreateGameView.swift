@@ -1,7 +1,3 @@
-//
-//  CreateGameView.swift
-//  PickupPlay
-//
 import SwiftUI
 import MapKit
 
